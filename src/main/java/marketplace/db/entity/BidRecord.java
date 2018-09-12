@@ -15,14 +15,16 @@ public class BidRecord {
     private long projectId;
     private String user;
     private double amount;
+    private double lowestAmount;
     private LocalDateTime bidMadeAt;
 
     protected BidRecord() { }
 
-    public BidRecord(long projectId, String user, double amount, LocalDateTime bidMadeAt) {
+    public BidRecord(long projectId, String user, double amount, double lowestAmount, LocalDateTime bidMadeAt) {
         this.projectId = projectId;
         this.user = user;
         this.amount = amount;
+        this.lowestAmount = lowestAmount;
         this.bidMadeAt = bidMadeAt;
     }
 
@@ -40,6 +42,10 @@ public class BidRecord {
 
     public double getAmount() {
         return amount;
+    }
+
+    public double getLowestAmount() {
+        return lowestAmount;
     }
 
     public LocalDateTime getBidMadeAt() {

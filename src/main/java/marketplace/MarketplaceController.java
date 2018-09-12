@@ -18,6 +18,7 @@ public class MarketplaceController {
 
     private static final String NO_WINNERS = "NO WINNERS";
     private static final double DEFAULT_BID = -1;
+    private static final double AUTOBID_STEPDOWN = 1;
 
     private final ProjectRepository projectRepository;
     private final BidRepository bidRepository;
@@ -38,23 +39,32 @@ public class MarketplaceController {
     }
 
     @GetMapping("/projects/{id}")
-    public Project getProject(@PathVariable Long id) {
+    public Project getProject(@PathVariable long id) {
         ProjectRecord dbProject = projectRepository.findById(id)
                 .orElseThrow(() -> new MarketplaceException(String.format("ProjectRecord not found for id = %d", id)));
 
-        List<BidRecord> lowestBids = bidRepository.findLowestBid(id);
+        List<BidRecord> lowestBids = bidRepository.findLowestRegularBid(id);
         if (lowestBids.size() == 0) {
             return new Project(dbProject, NO_WINNERS, DEFAULT_BID);
         } else {
-            BidRecord lowestBid = lowestBids.get(0);
-            return new Project(dbProject, lowestBid.getUser(), lowestBid.getAmount());
+            BidRecord bid = lowestBids.get(0);
+            List<BidRecord> winningAutoBids = bidRepository.findLowestBidsLessThan(bid.getProjectId(), bid.getAmount(), bid.getUser());
+            if (winningAutoBids.size() == 0) {
+                return new Project(dbProject, bid.getUser(), bid.getAmount());
+            } else {
+                BidRecord autoBid = winningAutoBids.get(0);
+                double winningAmount = Math.max(autoBid.getLowestAmount(), bid.getAmount() - AUTOBID_STEPDOWN);
+                return new Project(dbProject, autoBid.getUser(), winningAmount);
+            }
         }
     }
 
     @PostMapping("/bid")
-    public Bid bidProject(@RequestParam(value="project-id") Long projectId,
+    public Bid bidProject(@RequestParam(value="project-id") long projectId,
                           @RequestParam(value="user") String user,
-                          @RequestParam(value="amount") double amount) {
+                          @RequestParam(value="amount") double amount,
+                          @RequestParam(value="lowest-amount", defaultValue="0") double lowestAmount) {
+        if (lowestAmount == 0) lowestAmount = amount;
         LocalDateTime biddingEndDate = projectRepository
                 .findById(projectId)
                 .orElseThrow(() -> new MarketplaceException(String.format("Project with id %d not found", projectId)))
@@ -64,15 +74,7 @@ public class MarketplaceController {
         if (now.isAfter(biddingEndDate)) throw new MarketplaceException(String.format("Bidding finished on this project (%d)", projectId));
 
         BidRecord saved = bidRepository.save(
-                new BidRecord(projectId, user, amount, now));
+                new BidRecord(projectId, user, amount, lowestAmount, now));
         return new Bid(saved);
     }
-
-/*
-    @PostMapping("/auto-bid")
-    public Bid autoBidProject(@RequestParam(value="project-id") Long projectId,
-                          @RequestParam(value="lowest-amount") double lowestAmount) {
-// add autobid field
-    }
-*/
 }

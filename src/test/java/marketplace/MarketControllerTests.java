@@ -9,6 +9,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -104,11 +105,12 @@ public class MarketControllerTests {
         ProjectRecord saved = projectRepository.save(new ProjectRecord(name, description, maxBudget, biddingEndDate));
 
         String projectId = String.valueOf(saved.getId());
-        this.mockMvc.perform(
+        ResultActions perform = this.mockMvc.perform(
                 post("/bid")
-                .param("project-id", projectId)
-                .param("user", "user1")
-                .param("amount", "100"))
+                        .param("project-id", projectId)
+                        .param("user", "user1")
+                        .param("amount", "100"));
+        perform
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.projectId").value(projectId))
@@ -119,11 +121,7 @@ public class MarketControllerTests {
     @Test
     public void bidOnNonExistentProject() throws Exception {
 
-        this.mockMvc.perform(
-                post("/bid")
-                        .param("project-id", String.valueOf(Long.MAX_VALUE))
-                        .param("user", "user1")
-                        .param("amount", "100"))
+        bidWithApi(String.valueOf(Long.MAX_VALUE), "user1", "100")
                 .andDo(print())
                 .andExpect(status().isInternalServerError());
     }
@@ -141,17 +139,13 @@ public class MarketControllerTests {
         Thread.sleep(2000);
 
         String projectId = String.valueOf(saved.getId());
-        this.mockMvc.perform(
-                post("/bid")
-                        .param("project-id", projectId)
-                        .param("user", "user1")
-                        .param("amount", "100"))
+        bidWithApi(projectId, "user1", "100")
                 .andDo(print())
                 .andExpect(status().isInternalServerError());
     }
 
     @Test
-    public void bidOnProjectAndWin() throws Exception {
+    public void bidOnProjectAndFindWinning() throws Exception {
 
         String name = "testProjectWithBids";
         String description = "test project with bids";
@@ -163,27 +157,15 @@ public class MarketControllerTests {
         ProjectRecord saved = projectRepository.save(new ProjectRecord(name, description, maxBudget, biddingEndDate));
 
         String projectId = String.valueOf(saved.getId());
-        this.mockMvc.perform(
-                post("/bid")
-                        .param("project-id", projectId)
-                        .param("user", "user1")
-                        .param("amount", "100"))
+        bidWithApi(projectId, "user1", "100")
                 .andDo(print())
                 .andExpect(status().isOk());
 
-        this.mockMvc.perform(
-                post("/bid")
-                        .param("project-id", projectId)
-                        .param("user", "user1")
-                        .param("amount", "110"))
+        bidWithApi(projectId, "user1", "110")
                 .andDo(print())
                 .andExpect(status().isOk());
 
-        this.mockMvc.perform(
-                post("/bid")
-                        .param("project-id", projectId)
-                        .param("user", "user2")
-                        .param("amount", "200"))
+        bidWithApi(projectId, "user2", "200")
                 .andDo(print())
                 .andExpect(status().isOk());
 
@@ -200,5 +182,62 @@ public class MarketControllerTests {
                 .andExpect(jsonPath("$.finished").value("false"));
 
     }
+
+    @Test
+    public void autoBidOnProjectAndFindWinning() throws Exception {
+
+        String name = "testProjectWithAutoBids";
+        String description = "test project with auto-bids";
+        double maxBudget = 999.999;
+        String maxBudgetString = "999.999";
+        LocalDateTime biddingEndDate = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS).plusSeconds(100);
+        String biddingEndDateReturn = returnDateFormatter.format(biddingEndDate);
+
+        ProjectRecord saved = projectRepository.save(new ProjectRecord(name, description, maxBudget, biddingEndDate));
+
+        String projectId = String.valueOf(saved.getId());
+        bidWithApi(projectId, "user1", "100")
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        bidWithApi(projectId, "user2", "110", "90")
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        bidWithApi(projectId, "user3", "200", "80")
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        this.mockMvc.perform(
+                get(String.format("/projects/%d", saved.getId())))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(name))
+                .andExpect(jsonPath("$.description").value(description))
+                .andExpect(jsonPath("$.maxBudget").value(maxBudgetString))
+                .andExpect(jsonPath("$.biddingEndDate").value(biddingEndDateReturn))
+                .andExpect(jsonPath("$.winningUser").value("user2"))
+                .andExpect(jsonPath("$.lowestBid").value("99.0"))
+                .andExpect(jsonPath("$.finished").value("false"));
+
+    }
+
+    private ResultActions bidWithApi(String projectId, String user, String amount) throws Exception {
+        return this.mockMvc.perform(
+                post("/bid")
+                        .param("project-id", projectId)
+                        .param("user", user)
+                        .param("amount", amount));
+    }
+
+    private ResultActions bidWithApi(String projectId, String user, String amount, String lowestAmount) throws Exception {
+        return this.mockMvc.perform(
+                post("/bid")
+                        .param("project-id", projectId)
+                        .param("user", user)
+                        .param("amount", amount)
+                        .param("lowest-amount", lowestAmount));
+    }
+
 
 }
